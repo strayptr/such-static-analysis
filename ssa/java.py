@@ -4,7 +4,6 @@ import pdb
 VERBOSE=False
 
 def scan(files):
-    print 'scanning...'
     ctx = JavaContext()
     ctx.add_files(files)
     for unit in ctx.each_file():
@@ -12,8 +11,8 @@ def scan(files):
         scanner.scan()
 
 def parse_file(filename):
-    print '\nparsing %s' % filename
     _startup()
+    print '\n%s:' % filename
     tree = parser.parse_file(filename)
     preprocessor = Preprocess(tree)
     processed = preprocessor.tree
@@ -63,7 +62,7 @@ class JavaFile(object):
         with open(self.path, 'r') as f:
             self.src = f.read()
         self.tree = parse_file(self.path)
-        self.scope = JavaScope(ctx, self.tree, parent=self)
+        self.scope = JavaScope(ctx, self, self.tree, parent=self)
 
     @property
     def path(self):
@@ -78,19 +77,22 @@ class JavaFile(object):
 # statements, e.g. a class, a method, etc.
 #
 class JavaScope(jmodel.Visitor):
-    def __init__(self, ctx, tree, parent=None):
+    def __init__(self, ctx, unit, tree, parent=None):
         super(JavaScope, self).__init__(verbose=VERBOSE)
         self.ctx = ctx
         self.tree = tree
         self.parent = parent
         self.decls = {}
+        self.unit = unit
+        # parse the scope.
         self.tree.accept(self)
 
     def resolve(self, name):
         pass
 
     def leave_FieldDeclaration(self, cur):
-        self.add_field(jFieldDecl(cur))
+        for field in jFieldDecl(cur):
+            self.add_field(field)
 
     def add_field(self, field):
         self.add_decl(field['name'], field)
@@ -194,7 +196,7 @@ def jType(typ):
     if is_str(typ):
         return typ
     elif isinstance(typ, jmodel.Type):
-        asserting(len(typ.type_arguments) <= 0)
+        #asserting(len(typ.type_arguments) <= 0) # TODO: figure out what this is for.
         asserting(not typ.enclosed_in)
         name = jName(typ.name)
         dims = typ.dimensions
@@ -204,16 +206,15 @@ def jType(typ):
             return name
 
 def jFieldDecl(field_decl):
-    o = {}
-    o['kind'] = 'field'
-    o['elem'] = field_decl
-    o['type'] = jType(field_decl.type)
-    asserting(len(field_decl.variable_declarators) == 1)
-    var = field_decl.variable_declarators[0]
-    o['name'] = var.variable.name
-    o['dims'] = var.variable.dimensions
-    o['value'] = var.initializer
-    return o
+    for var in field_decl.variable_declarators:
+        o = {}
+        o['kind'] = 'field'
+        o['elem'] = field_decl
+        o['type'] = jType(field_decl.type)
+        o['name'] = var.variable.name
+        o['dims'] = var.variable.dimensions
+        o['value'] = var.initializer
+        yield o
 
 #------------------------------------------------------------------------------
 # Parsing utils.
