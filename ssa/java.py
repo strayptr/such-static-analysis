@@ -5,31 +5,30 @@ VERBOSE=False
 
 def scan(files):
     ctx = JavaContext()
-    #
-    # initial parsing.
-    #
+    sql_finder = FindSQL(ctx)
+    def beforeParsed(filepath, idx, total):
+        progress = '(%d/%d)' % (idx, total)
+        if g.args.mode == 'syntax':
+            print '\n%s %s' % (progress, filepath)
+        else:
+            print '\n%s %s' % (progress, filepath)
+    for unit in parse_files(ctx, files, fnBeforeParsed=beforeParsed):
+        if g.args.mode == 'syntax':
+            print pp(unit.tree)
+        elif g.args.mode == 'sqli':
+            sql_finder.search(unit)
+        else:
+            asserting(False and "unknown mode")
+
+def parse_files(ctx, files, fnBeforeParsed=None):
     files = listify(files)
     for i in xrange(len(files)):
         filepath = files[i]
-        progress = '(%d/%d)' % (i, len(files))
-        if g.args.mode == 'syntax':
-            print '\n%s:' % filepath
-        else:
-            print '%s Parsing %s' % (progress, filepath)
+        if fnBeforeParsed:
+            fnBeforeParsed(filepath, idx=i, total=len(files))
         unit = ctx.add_file(filepath)
-        if g.args.mode == 'syntax':
-            print pp(unit.tree)
-    if g.args.mode == 'syntax':
-        return
-    # 
-    # SQL scanning.
-    #
-    sqlfinder = FindSQL(ctx)
-    if g.args.mode == 'sqli':
-        #sqlfinder.find_sqli()
-        pass
-    else:
-        asserting(not "unknown mode")
+        if unit:
+            yield unit
 
 def parse_file(filename):
     parser = _startup()
@@ -175,7 +174,10 @@ def pp(x, indent=0):
     if isname(x):
         return 'Name(%s)' % x.value
     if isliteral(x):
-        return 'Literal(%s)' % x.value.replace(r'\n', '\n' + ind(indent))
+        val = x.value
+        #val = val.replace(r'\n', '\n' + ind(indent))
+        val = val.replace(r'\n', '\\n"\n%s"' % ind(indent))
+        return 'Literal(%s)' % val
     if isexpr(x):
         return 'Expression(%s)' % pp(x.expression, indent + 1)
     if isinstance(x, jmodel.MethodInvocation):
@@ -260,8 +262,9 @@ def invoke(self, fn, args):
 def jwalk(elem, fnVisit=None, fnLeave=None, parents=None, idx=0):
     if not parents:
         parents = []
+    ref = ElemRef(elem, parents=list(parents), idx=idx)
     if fnVisit:
-        ret = fnVisit(parents + [elem])
+        ret = fnVisit(ref)
         if ret:
             return ret
     parents.append(elem)
@@ -284,7 +287,7 @@ def jwalk(elem, fnVisit=None, fnLeave=None, parents=None, idx=0):
     asserting(parents[-1] == elem)
     parents.pop()
     if fnLeave:
-        ret = fnLeave(parents + [elem])
+        ret = fnLeave(ref)
         if ret:
             return ret
 
@@ -361,8 +364,20 @@ class Preprocess(object):
 #==============================================================================
 
 class ElemRef(object):
-    def __init__(self, ctx, unit, tree):
-        pass
+    def __init__(self, elem, parents, idx):
+        self.elem = elem
+        self.parents = list(parents)
+        self.idx = idx
+
+    @property
+    def indent(self):
+        return len(self.parents) + 1
+
+    def __str__(self):
+        return jstr(self.elem)
+
+    def __repr__(self):
+        return pp(self.elem, indent=self.indent + 1)
 
 
 #==============================================================================
@@ -378,31 +393,32 @@ class FindSQLInUnit(jmodel.Visitor):
         # find SQL statements.
         jwalk(self.unit.tree, fnVisit=self.visit, fnLeave=self.leave)
 
-    def visit(self, chain):
+    def visit(self, ref):
         if isverbose():
-            print '%svisit %s' % (ind(len(chain)), pp(chain[-1], indent=len(chain)+1))
+            print '%svisit %s' % (ind(ref.indent), repr(ref))
 
-    def leave(self, chain):
+    def leave(self, ref):
         if isverbose():
-            print '%sleave %s' % (ind(len(chain)), type(chain[-1]))
-        if isstrliteral(chain[-1]):
-            self.scan_literal(chain[-1], indent=len(chain))
+            print '%sleave %s' % (ind(ref.indent), repr(ref))
+        if isstrliteral(ref.elem):
+            self.scan_literal(ref)
 
-    def scan_literal(self, lit, indent=0):
-        statements = ssa.sql.findall(jstr(lit))
+    def scan_literal(self, ref):
+        assert(isliteral(ref.elem))
+        statements = ssa.sql.findall(str(ref))
         if len(statements) > 0:
-            print 'Found SQL: %s' % pp(lit, indent=indent)
+            #print '%sFound SQL: %s' % (ind(ref.indent), repr(ref))
+            print '%s%s' % (ind(ref.indent), repr(ref))
 
 
 class FindSQL(object):
     def __init__(self, ctx):
         self.ctx = ctx
         self.units = {}
-        for unit in self.ctx.each_file():
-            self.add_unit(unit)
 
-    def add_unit(self, unit):
-        print 'Scanning %s for SQL statements...' % unit
+    def search(self, unit):
+        if isverbose():
+            print 'Scanning %s for SQL statements...' % unit
         self.units[unit.path] = FindSQLInUnit(unit)
 
 
