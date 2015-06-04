@@ -239,6 +239,8 @@ def jFieldDecl(field_decl):
 def jstr(elem):
     if not elem:
         return None
+    if isref(elem):
+        return jstr(elem.elem)
     if is_str(elem):
         return elem
     if isname(elem):
@@ -259,7 +261,7 @@ def invoke(self, fn, args):
         return fn(*args)
 
 
-def jwalk(elem, fnVisit=None, fnLeave=None, parents=None, idx=0):
+def jwalk(elem, fnVisit=None, fnLeave=None, parents=None, idx=0, recursive=True, first=True):
     if not parents:
         parents = []
     ref = ElemRef(elem, parents=list(parents), idx=idx)
@@ -269,21 +271,22 @@ def jwalk(elem, fnVisit=None, fnLeave=None, parents=None, idx=0):
             return ret
     parents.append(elem)
     childidx = 0
-    for f in elem._fields:
-        field = getattr(elem, f)
-        if field:
-            if isinstance(field, list):
-                for i in xrange(len(field)):
-                    if isinstance(field[i], jmodel.SourceElement):
-                        ret = jwalk(field[i], fnVisit, fnLeave, parents=parents, idx=childidx)
-                        childidx += 1
-                        if ret:
-                            return ret
-            elif isinstance(field, jmodel.SourceElement):
-                ret = jwalk(field, fnVisit, fnLeave, parents=parents, idx=childidx)
-                childidx += 1
-                if ret:
-                    return ret
+    if recursive or first:
+        for f in elem._fields:
+            field = getattr(elem, f)
+            if field:
+                if isinstance(field, list):
+                    for i in xrange(len(field)):
+                        if isinstance(field[i], jmodel.SourceElement):
+                            ret = jwalk(field[i], fnVisit, fnLeave, parents=parents, idx=childidx, recursive=recursive, first=False)
+                            childidx += 1
+                            if ret:
+                                return ret
+                elif isinstance(field, jmodel.SourceElement):
+                    ret = jwalk(field, fnVisit, fnLeave, parents=parents, idx=childidx, recursive=recursive, first=False)
+                    childidx += 1
+                    if ret:
+                        return ret
     asserting(parents[-1] == elem)
     parents.pop()
     if fnLeave:
@@ -300,7 +303,14 @@ def isliteral(x): return isinstance(x, jmodel.Literal)
 def isadditive(x): return isinstance(x, jmodel.Additive)
 def isname(x): return isinstance(x, jmodel.Name)
 def isexpr(x): return isinstance(x, jmodel.ExpressionStatement)
+def isref(x): return isinstance(x, ElemRef)
 def istype(x): return isinstance(x, jmodel.Type)
+def iscall(x, method_name=None):
+    if not isinstance(x, jmodel.MethodInvocation):
+        return False
+    if method_name:
+        return x.name == method_name
+    return True
 
 def isstrliteral(x):
     if not isliteral(x):
@@ -363,11 +373,66 @@ class Preprocess(object):
 # Element Reference.
 #==============================================================================
 
+def get_parent_expr(parents, idx):
+    if not parents:
+        return None
+    cur = parents[idx]
+    asserting(cur)
+    if isexpr(cur):
+        return idx
+    return get_parent_expr(parents, idx - 1)
+
 class ElemRef(object):
     def __init__(self, elem, parents, idx):
         self.elem = elem
         self.parents = list(parents)
         self.idx = idx
+
+    def next_sibling_expr(self, parents=None):
+        if not parents:
+            parents = list(self.parents)
+        if len(parents) <= 0:
+            return
+        par = parents.pop()
+        asserting(par)
+        if isadditive(par):
+            if par.rhs != self.elem:
+                return par.rhs
+            return self.next_sibling_expr(parents)
+        if iscall(par, 'append'):
+            idx = get_parent_expr(parents, idx=-1)
+            asserting(idx)
+            sibling = jwalk(parents[idx - 1], fnVisit=self._findsib(par), recursive=False)
+            return sibling
+        if iscall(par):
+            return
+        if isinstance(par, jmodel.InstanceCreation):
+            return
+        print '\n\n'
+        print '%s!!WARN!!:  %s  %s' % (ind(self.indent), repr(self), repr(par))
+        print '\n\n'
+        #pdb.set_trace()
+
+    def _findsib(self, of):
+        class Finder(object):
+            def __init__(self, me, of):
+                self.me = me
+                self.of = of
+                self.found = False
+
+            def find(self, ref):
+                elem = ref.elem
+                if isexpr(elem):
+                    elem = elem.expression
+                if iscall(elem, 'append'):
+                    if not self.found:
+                        if elem.arguments[0] == self.of.arguments[0]:
+                            self.found = True
+                    else:
+                        asserting(elem.arguments[0] != self.of.arguments[0])
+                        #pdb.set_trace()
+                        return elem.arguments[0]
+        return Finder(self, of).find
 
     @property
     def indent(self):
@@ -391,24 +456,59 @@ class FindSQLInUnit(jmodel.Visitor):
         self.unit = unit
         self.sql = []
         # find SQL statements.
+        self.prev_info = None
         jwalk(self.unit.tree, fnVisit=self.visit, fnLeave=self.leave)
 
     def visit(self, ref):
         if isverbose():
             print '%svisit %s' % (ind(ref.indent), repr(ref))
+        if isinstance(ref.elem, jmodel.MethodDeclaration):
+            self.prev_info = None
 
     def leave(self, ref):
         if isverbose():
             print '%sleave %s' % (ind(ref.indent), repr(ref))
         if isstrliteral(ref.elem):
             self.scan_literal(ref)
+        if isinstance(ref.elem, jmodel.MethodDeclaration):
+            self.prev_info = None
 
     def scan_literal(self, ref):
         assert(isliteral(ref.elem))
         statements = ssa.sql.findall(str(ref))
+        # found if the literal contains any SQL statements
         if len(statements) > 0:
-            #print '%sFound SQL: %s' % (ind(ref.indent), repr(ref))
-            print '%s%s' % (ind(ref.indent), repr(ref))
+            self.found(ref)
+        elif self.prev_info:
+            # found if the previous literal contained SQL statements and 
+            # ended with any of the following:
+            #   =
+            #   = '
+            #   LIKE '
+            # ... and the current literal begins with a matching
+            # quote.
+            prev = self.prev_info['ref']
+            prev_elem = prev.elem
+            prev_str = unquote(jstr(prev))
+            if len(self.prev_info['sql']) > 0 and ssa.sql.is_ending_vulnerable(prev_str):
+                middle = prev.next_sibling_expr()
+                if not middle or middle == ref.elem:
+                    print '\n\n'
+                    print '%s!!SQLI-MAYBE!!:  %s' % (ind(ref.indent), (quote(prev_str) + ' + ' + jstr(ref.elem)))
+                    print '\n\n'
+                    #pdb.set_trace()
+                else:
+                    print '\n\n'
+                    print '%s!!SQLI!!:  %s' % (ind(ref.indent), (quote(prev_str) + ' + ' + pp(middle) + ' + ' + jstr(ref.elem)))
+                    print '\n\n'
+                    #pdb.set_trace()
+
+        self.prev_info = {'ref':ref, 'sql':statements}
+
+    def found(self, ref):
+        #print '%sFound SQL: %s' % (ind(ref.indent), repr(ref))
+        print '%s%s' % (ind(ref.indent), repr(ref))
+
 
 
 class FindSQL(object):

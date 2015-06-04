@@ -182,4 +182,9 @@ def is_sql_statement(val):
     return word in ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'ALTER', 'DROP', 'CREATE', 'USE', 'SHOW']
 
 
+_vuln_ending = re.compile(r" (([=] [\s\n]* [']?) | ((?<! [\w] ) [']) | (LIKE [\s\n]* ([\w_]+ [\s\n]* [(])? [\s\n]* ['] [%]? ) ) [\s\n]* (\\[rn])* $", re.VERBOSE)
+def is_ending_vulnerable(line):
+    return _vuln_ending.search(line)
+
+
 
