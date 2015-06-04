@@ -5,19 +5,38 @@ VERBOSE=False
 
 def scan(files):
     ctx = JavaContext()
-    ctx.add_files(files)
-    for unit in ctx.each_file():
-        scanner = JavaScanner(ctx, unit)
-        scanner.scan()
+    #
+    # initial parsing.
+    #
+    files = listify(files)
+    for i in xrange(len(files)):
+        filepath = files[i]
+        progress = '(%d/%d)' % (i, len(files))
+        if g.args.mode == 'syntax':
+            print '\n%s:' % filepath
+        else:
+            print '%s Parsing %s' % (progress, filepath)
+        unit = ctx.add_file(filepath)
+        if g.args.mode == 'syntax':
+            print pp(unit.tree)
+    if g.args.mode == 'syntax':
+        return
+    # 
+    # SQL scanning.
+    #
+    sqlfinder = FindSQL(ctx)
+    if g.args.mode == 'sqli':
+        sqlfinder.find_sqli()
+    else:
+        asserting(not "unknown mode")
 
 def parse_file(filename):
-    _startup()
-    print '\n%s:' % filename
+    parser = _startup()
     tree = parser.parse_file(filename)
-    preprocessor = Preprocess(tree)
-    processed = preprocessor.tree
-    print pp(processed)
-    return processed
+    if tree:
+        preprocessor = Preprocess(tree)
+        processed = preprocessor.tree
+        return processed
 
 #==============================================================================
 # Java-specific Functionality
@@ -25,26 +44,33 @@ def parse_file(filename):
 import plyj.model as jmodel
 import plyj.parser
 
-parser = None
+g_parser = None
 
 def _startup():
-    global parser
-    if not parser:
-        parser = plyj.parser.Parser()
+    global g_parser
+    if not g_parser:
+        g_parser = plyj.parser.Parser()
+    return g_parser
 
 
 class JavaContext(object):
     def __init__(self, files=[]):
         self.files = {}
-        self.add_files(files)
-
-    def add_files(self, files):
         for filepath in files:
-            path = mkpath(filepath)
-            if not path.isfile:
-                print 'JavaContext: not a file: %s' % path
-                continue
-            self.files[path] = JavaFile(self, path)
+            self.add_file(filepath)
+
+    def add_file(self, filepath):
+        path = mkpath(filepath)
+        if not path.isfile:
+            print 'JavaContext: not a file: %s' % path
+            return
+        # parse the file.
+        tree = parse_file(filepath)
+        if tree:
+            unit = JavaFile(self, filepath, tree)
+            self.files[path] = unit
+            return unit
+
 
     def get_file(self, filepath):
         return self.files[filepath]
@@ -54,14 +80,14 @@ class JavaContext(object):
 
 
 class JavaFile(object):
-    def __init__(self, ctx, path):
+    def __init__(self, ctx, path, tree):
         self.ctx = ctx
         self._path = mkpath(path)
-        asserting(self._path.isfile)
-        # load and parse the file.
-        with open(self.path, 'r') as f:
-            self.src = f.read()
-        self.tree = parse_file(self.path)
+        self.tree = tree
+        # load the file.
+        #with open(self.path, 'r') as f:
+            #self.src = f.read()
+        # parse the file.
         self.scope = JavaScope(ctx, self, self.tree, parent=self)
 
     @property
@@ -79,6 +105,7 @@ class JavaFile(object):
 class JavaScope(jmodel.Visitor):
     def __init__(self, ctx, unit, tree, parent=None):
         super(JavaScope, self).__init__(verbose=VERBOSE)
+        asserting(tree)
         self.ctx = ctx
         self.tree = tree
         self.parent = parent
@@ -100,16 +127,6 @@ class JavaScope(jmodel.Visitor):
     def add_decl(self, name, val):
         #asserting(name not in self.decls) # TODO: fix nested scopes.
         self.decls[name] = val
-
-
-
-class JavaScanner(object):
-    def __init__(self, ctx, unit):
-        self.ctx = ctx
-        self.unit = unit
-
-    def scan(self):
-        pass
 
 #==============================================================================
 # plyj-Specific Functionality
@@ -237,6 +254,10 @@ def unquote(x):
             return x[1:-1]
     return x
 
+#==============================================================================
+# Preprocessor.
+#==============================================================================
+
 class Preprocess(object):
     def __init__(self, tree):
         self._tree = tree
@@ -269,6 +290,29 @@ class Preprocess(object):
             if isliteral(elem.lhs) and isliteral(elem.rhs):
                 return jmodel.Literal('%s + %s' % (elem.lhs.value, elem.rhs.value))
         return elem
+
+#==============================================================================
+# SQLi scanner.
+#==============================================================================
+
+class FindSQL(object):
+    def __init__(self, ctx):
+        self.ctx = ctx
+
+    def find_sqli(self):
+        for unit in self.ctx.each_file():
+            print 'Scanning %s for SQLi...' % unit
+            scanner = FindSQLInUnit(self.ctx, unit)
+            scanner.find_sqli()
+
+
+class FindSQLInUnit(object):
+    def __init__(self, ctx, unit):
+        self.ctx = ctx
+        self.unit = unit
+
+    def find_sqli(self):
+        pass
 
 
 #==============================================================================
