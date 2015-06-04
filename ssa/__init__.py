@@ -4,31 +4,7 @@ import pdb
 #==============================================================================
 # Common Functionality
 #==============================================================================
-
-#
-# see http://stackoverflow.com/questions/2186525/use-a-glob-to-find-files-recursively-in-python
-#
-import os, fnmatch
-def find_files(directory, patterns, ignore_patterns):
-    patterns = patterns or ['*']
-    if isinstance(patterns, str) or isinstance(patterns, unicode):
-        patterns = [patterns]
-    ignore_patterns = ignore_patterns or []
-    if isinstance(ignore_patterns, str) or isinstance(ignore_patterns, unicode):
-        ignore_patterns = [ignore_patterns]
-    for root, dirs, files in os.walk(directory):
-        for basename in files:
-            for pattern in patterns:
-                if fnmatch.fnmatch(basename, pattern):
-                    ignored = False
-                    for ignore_pattern in ignore_patterns:
-                        if fnmatch.fnmatch(basename, ignore_pattern):
-                            ignored = True
-                            break
-                    if not ignored:
-                        filename = os.path.join(root, basename)
-                        yield filename
-                        break
+from ssa.common import *
 
 #==============================================================================
 # Cmdline
@@ -67,68 +43,6 @@ args = None
 #==============================================================================
 import sys
 import os
-
-class Path(object):
-    def __init__(self, path):
-        assert(isinstance(path, str) or isinstance(path, unicode))
-        self._path = path
-
-    @property
-    def path(self):
-        val = self._path
-        val = os.path.normpath(val)
-        val = os.path.normcase(val)
-        return val
-
-    @property
-    def abspath(self):
-        return os.path.abspath(self.path)
-
-    @property
-    def isfile(self):
-        return os.path.isfile(self.path)
-
-    @property
-    def isdir(self):
-        return os.path.isdir(self.path)
-
-    @property
-    def exists(self):
-        return os.path.exists(self.path)
-
-    def __eq__(self, other):
-        if not isinstance(other, Path):
-            other = Path(other)
-        return self.abspath == other.abspath
-
-    def __hash__(self):
-        return hash(self.abspath)
-
-    def __str__(self):
-        return self.path
-
-    def __repr__(self):
-        return '"%s"' % self.path
-
-
-class FileSet(object):
-    def __init__(self):
-        self.added = set()
-        self.files = []
-
-    def add_file(self, filepath):
-        path = Path(filepath)
-        if not path.exists:
-            print "Path doesn't exist: %s" % path
-            return
-        if not path.isfile:
-            print "Path isn't a file: %s" % path
-            return
-        # if it was already added, ignore it.
-        if path in self.added:
-            return
-        self.added.add(path)
-        self.files.append(path)
 
 class LineCounter(FileSet):
     def __init__(self):
@@ -196,13 +110,8 @@ def count_lines():
     if len(paths) <= 0:
         print 'No paths specified, searching CWD: %s' % os.getcwd()
         paths.append('.')
-    # search for files in each path.
-    for path in paths:
-        if not os.path.isdir(path):
-            print 'Not a directory: %s' % path
-            continue
-        for filepath in find_files(path, patterns=patterns, ignore_patterns=ignore_patterns):
-            counter.add_file(filepath)
+    for filepath in find_files(paths, patterns=patterns, ignore_patterns=ignore_patterns):
+        counter.add(filepath)
     counter.count_lines()
     if interactive:
         wait_any_key()
@@ -230,4 +139,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
