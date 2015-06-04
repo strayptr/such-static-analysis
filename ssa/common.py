@@ -124,9 +124,7 @@ class Path(object):
         return os.path.exists(self.path)
 
     def __eq__(self, other):
-        if not isinstance(other, Path):
-            other = Path(other)
-        return self.abspath == other.abspath
+        return self.abspath == mkpath(other).abspath
 
     def __hash__(self):
         return hash(self.abspath)
@@ -138,9 +136,15 @@ class Path(object):
         return repr(self.path)
 
 def mkpath(filepath):
+    asserting(filepath)
     if isinstance(filepath, Path):
         return filepath
     return Path(filepath)
+
+def getpath(filepath):
+    if isinstance(filepath, Path):
+        return str(filepath)
+    return filepath
 
 
 class FileSet(object):

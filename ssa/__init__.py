@@ -30,13 +30,17 @@ parser.add_argument('-i', '--ignore-pattern',
         action='append',
         help="file patterns to skip." )
 
+parser.add_argument('--interactive',
+        action="store_true",
+        help="prompts for input before exiting." )
+
 parser.add_argument('-c', '--count',
         action="store_true",
         help="count the lines of code in each file." )
 
-parser.add_argument('--interactive',
+parser.add_argument('-s', '--sql',
         action="store_true",
-        help="prompts for input before exiting." )
+        help="print anything that looks like an SQL statement." )
 
 #==============================================================================
 # Main
@@ -96,14 +100,17 @@ def get_files():
     return files
 
 def run():
-    if not g.args.count:
-        # if we're not counting lines, then we're scanning Java code.
-        g.args.pattern = listify(g.args.pattern)
+    if g.args.count: g.args.mode = 'count'
+    elif g.args.sql: g.args.mode = 'sqli'
+    else: g.args.mode = 'syntax'
+    g.args.pattern = listify(g.args.pattern)
+    # if we're not counting lines, then we're scanning Java code.
+    if g.args.mode != 'count':
         g.args.pattern += ['*.java']
     if isverbose():
         print 'Searching for files...'
     files = get_files()
-    if g.args.count:
+    if g.args.mode == 'count':
         counter = LineCounter()
         counter.add(files)
         counter.count_lines()
