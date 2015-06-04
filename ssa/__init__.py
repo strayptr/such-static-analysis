@@ -5,6 +5,7 @@ import pdb
 # Common Functionality
 #==============================================================================
 from ssa.common import *
+import ssa.java
 
 #==============================================================================
 # Cmdline
@@ -97,9 +98,13 @@ def get_files():
 
 def run():
     files = get_files()
-    counter = LineCounter()
-    counter.add(files)
-    counter.count_lines()
+    if args.count:
+        counter = LineCounter()
+        counter.add(files)
+        counter.count_lines()
+    else:
+        print 'Scanning %d java file(s)...' % len(files)
+        ssa.java.scan(files)
     if args.interactive:
         wait_any_key()
 
