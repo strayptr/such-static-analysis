@@ -2,7 +2,7 @@ import pdb
 import os
 
 #===============================================================================
-# Common Utilities
+# Basic Utilities
 #===============================================================================
 
 def panic(msg, exitcode=1):
@@ -57,11 +57,31 @@ def flatten(xs, recursive=True):
                 return flatten(ys, recursive=True)
     return ys
 
+#===============================================================================
+# Other Utilities
+#===============================================================================
+
+import platform
+def iswindows():
+    return platform.system().lower().find('windows') >= 0
+
+def wait_any_key():
+    if iswindows():
+        print "Press any key to continue..."
+        import msvcrt as m
+        return m.getch()
+    else:
+        return raw_input("Press enter to continue...")
+        
+
 def increase_stackoverflow_limit(limit=10**6):
     import resource, sys
     #resource.setrlimit(resource.RLIMIT_STACK, (2**29,-1))
     sys.setrecursionlimit(limit)
 
+#===============================================================================
+# Filesystem Utilities
+#===============================================================================
 
 class Path(object):
     def __init__(self, path):
@@ -146,7 +166,6 @@ class FileSet(object):
 
     def __str__(self):
         return repr(self.files)
-
 
 import fnmatch
 def patmatch(name, patterns, ignorecase=False):

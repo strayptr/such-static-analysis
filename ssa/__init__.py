@@ -76,60 +76,32 @@ class LineCounter(FileSet):
             lines += linecount
         print '%d lines in %d files' % (lines, files)
 
-def count_lines():
-    counter = LineCounter()
-    # for each arg on cmdline...
-    patterns = args.pattern or list()
-    ignore_patterns = args.ignore_pattern or list()
-    paths = []
-    for arg in args.args:
-        # if the arg is a pattern, then add it to the list of
-        # patterns.
-        if arg.find('*') >= 0:
-            patterns.append(arg)
-            continue
-        # otherwise it's a path.
-        paths.append(arg)
-    interactive = args.interactive
+
+def get_files():
+    paths = listify(args.args)
     # if no paths were specified, then switch to interactive mode and
     # prompt the user for paths.
     if len(paths) <= 0:
-        interactive = True
+        args.interactive = True
         while True:
-            line = raw_input('Enter source code path or file pattern.  To finish, enter a blank line: ')
-            path_or_pattern = line.strip()
-            if len(path_or_pattern) <= 0:
+            line = raw_input('Enter source code path or file pattern.  To finish, enter a blank line: ').strip()
+            if len(line) <= 0:
                 break
-            if path_or_pattern.find('*') >= 0:
-                patterns.append(path_or_pattern)
-            elif not os.path.exists(path_or_pattern):
-                sys.stderr.write("Path doesn't exist: %s\n" % path_or_pattern)
-            else:
-                paths.append(path_or_pattern)
+            paths.append(line)
     # if no paths are specified, search the cwd.
     if len(paths) <= 0:
-        print 'No paths specified, searching CWD: %s' % os.getcwd()
+        print 'No paths specified, searching current dir: %s' % os.getcwd()
         paths.append('.')
-    for filepath in find_files(paths, patterns=patterns, ignore_patterns=ignore_patterns):
-        counter.add(filepath)
-    counter.count_lines()
-    if interactive:
-        wait_any_key()
+    files = list(find_files(paths, patterns=args.pattern, ignore_patterns=args.ignore_pattern))
+    return files
 
-import platform
-def iswindows():
-    return platform.system().lower().find('windows') >= 0
-
-def wait_any_key():
-    if iswindows():
-        print "Press any key to continue..."
-        import msvcrt as m
-        return m.getch()
-    else:
-        return raw_input("Press enter to continue...")
-        
 def run():
-    count_lines()
+    files = get_files()
+    counter = LineCounter()
+    counter.add(files)
+    counter.count_lines()
+    if args.interactive:
+        wait_any_key()
 
 def main():
     global args
