@@ -181,7 +181,7 @@ def patmatch(name, patterns, ignorecase=False):
 # adapted from http://stackoverflow.com/questions/2186525/use-a-glob-to-find-files-recursively-in-python
 #
 import os
-def find_files_in(directory, patterns=[], ignore_patterns=[], ignorecase=True):
+def find_files_in(directory, patterns=[], ignore_patterns=[], ignorecase=True, verbose=False):
     patterns = listify(patterns)
     ignore_patterns = listify(ignore_patterns)
     # if no patterns, then match everything.
@@ -195,13 +195,15 @@ def find_files_in(directory, patterns=[], ignore_patterns=[], ignorecase=True):
                 yield directory
     else:
         for root, dirs, files in os.walk(directory):
+            if verbose:
+                print 'find_files_in(%s): trying %d files' % (repr(root), len(files))
             for basename in files:
                 if patmatch(basename, patterns, ignorecase=ignorecase):
                     if not patmatch(basename, ignore_patterns, ignorecase=ignorecase):
                         filename = os.path.join(root, basename)
                         yield filename
 
-def find_files(paths_or_patterns, patterns=['*'], ignore_patterns=[], ignorecase=True):
+def find_files(paths_or_patterns, patterns=['*'], ignore_patterns=[], ignorecase=True, verbose=False):
     patterns = list(listify(patterns))
     ignore_patterns = list(listify(ignore_patterns))
     paths = []
@@ -220,7 +222,9 @@ def find_files(paths_or_patterns, patterns=['*'], ignore_patterns=[], ignorecase
         if not path.exists:
             print "find_files(): Doesn't exist: %s" % path
             continue
-        for filepath in find_files_in(str(path), patterns=patterns, ignore_patterns=ignore_patterns, ignorecase=ignorecase):
+        if verbose:
+            print 'find_files(%s)' % repr(str(path))
+        for filepath in find_files_in(str(path), patterns=patterns, ignore_patterns=ignore_patterns, ignorecase=ignorecase, verbose=verbose):
             if filepath not in found:
                 found.add(filepath)
                 yield filepath
