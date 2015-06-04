@@ -5,6 +5,7 @@ import pdb
 # Common Functionality
 #==============================================================================
 from ssa.common import *
+import ssa.java
 
 #==============================================================================
 # Cmdline
@@ -92,14 +93,23 @@ def get_files():
     if len(paths) <= 0:
         print 'No paths specified, searching current dir: %s' % os.getcwd()
         paths.append('.')
-    files = list(find_files(paths, patterns=args.pattern, ignore_patterns=args.ignore_pattern))
+    files = list(find_files(paths, patterns=args.pattern, ignore_patterns=args.ignore_pattern, verbose=True))
     return files
 
 def run():
+    if not args.count:
+        # if we're not counting lines, then we're scanning Java code.
+        args.pattern = listify(args.pattern)
+        args.pattern += ['*.java']
+    print 'Searching for files...'
     files = get_files()
-    counter = LineCounter()
-    counter.add(files)
-    counter.count_lines()
+    if args.count:
+        counter = LineCounter()
+        counter.add(files)
+        counter.count_lines()
+    else:
+        print 'Scanning %d java file(s)...' % len(files)
+        ssa.java.scan(files)
     if args.interactive:
         wait_any_key()
 
