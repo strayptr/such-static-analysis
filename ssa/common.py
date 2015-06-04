@@ -2,6 +2,18 @@ import pdb
 import os
 
 #===============================================================================
+# Application-Specific Utilities
+#===============================================================================
+import ssa.globals as g
+
+def isverbose(verbose=False):
+    if verbose:
+        return True
+    if g.args:
+        return g.args.verbose
+    return False
+
+#===============================================================================
 # Basic Utilities
 #===============================================================================
 
@@ -195,7 +207,7 @@ def find_files_in(directory, patterns=[], ignore_patterns=[], ignorecase=True, v
                 yield directory
     else:
         for root, dirs, files in os.walk(directory):
-            if verbose:
+            if isverbose(verbose):
                 print 'find_files_in(%s): trying %d files' % (repr(root), len(files))
             for basename in files:
                 if patmatch(basename, patterns, ignorecase=ignorecase):
@@ -222,7 +234,7 @@ def find_files(paths_or_patterns, patterns=['*'], ignore_patterns=[], ignorecase
         if not path.exists:
             print "find_files(): Doesn't exist: %s" % path
             continue
-        if verbose:
+        if isverbose(verbose):
             print 'find_files(%s)' % repr(str(path))
         for filepath in find_files_in(str(path), patterns=patterns, ignore_patterns=ignore_patterns, ignorecase=ignorecase, verbose=verbose):
             if filepath not in found:

@@ -6,6 +6,7 @@ import pdb
 #==============================================================================
 from ssa.common import *
 import ssa.java
+import ssa.globals as g
 
 #==============================================================================
 # Cmdline
@@ -36,8 +37,6 @@ parser.add_argument('-c', '--count',
 parser.add_argument('--interactive',
         action="store_true",
         help="prompts for input before exiting." )
-
-args = None
 
 #==============================================================================
 # Main
@@ -79,11 +78,11 @@ class LineCounter(FileSet):
 
 
 def get_files():
-    paths = listify(args.args)
+    paths = listify(g.args.args)
     # if no paths were specified, then switch to interactive mode and
     # prompt the user for paths.
     if len(paths) <= 0:
-        args.interactive = True
+        g.args.interactive = True
         while True:
             line = raw_input('Enter source code path or file pattern.  To finish, enter a blank line: ').strip()
             if len(line) <= 0:
@@ -93,30 +92,30 @@ def get_files():
     if len(paths) <= 0:
         print 'No paths specified, searching current dir: %s' % os.getcwd()
         paths.append('.')
-    files = list(find_files(paths, patterns=args.pattern, ignore_patterns=args.ignore_pattern, verbose=True))
+    files = list(find_files(paths, patterns=g.args.pattern, ignore_patterns=g.args.ignore_pattern))
     return files
 
 def run():
-    if not args.count:
+    if not g.args.count:
         # if we're not counting lines, then we're scanning Java code.
-        args.pattern = listify(args.pattern)
-        args.pattern += ['*.java']
-    print 'Searching for files...'
+        g.args.pattern = listify(g.args.pattern)
+        g.args.pattern += ['*.java']
+    if isverbose():
+        print 'Searching for files...'
     files = get_files()
-    if args.count:
+    if g.args.count:
         counter = LineCounter()
         counter.add(files)
         counter.count_lines()
     else:
         print 'Scanning %d java file(s)...' % len(files)
         ssa.java.scan(files)
-    if args.interactive:
+    if g.args.interactive:
         wait_any_key()
 
 def main():
-    global args
-    args, leftovers = parser.parse_known_args()
-    args.args = leftovers
+    g.args, leftovers = parser.parse_known_args()
+    g.args.args = leftovers
     run()
 
 if __name__ == "__main__":
