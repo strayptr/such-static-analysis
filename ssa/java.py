@@ -1,5 +1,5 @@
-from ssa.common import *
 import pdb
+from ssa.common import *
 
 VERBOSE=False
 
@@ -26,7 +26,8 @@ def scan(files):
     #
     sqlfinder = FindSQL(ctx)
     if g.args.mode == 'sqli':
-        sqlfinder.find_sqli()
+        #sqlfinder.find_sqli()
+        pass
     else:
         asserting(not "unknown mode")
 
@@ -104,7 +105,7 @@ class JavaFile(object):
 #
 class JavaScope(jmodel.Visitor):
     def __init__(self, ctx, unit, tree, parent=None):
-        super(JavaScope, self).__init__(verbose=VERBOSE)
+        super(JavaScope, self).__init__(verbose=VERBOSE and isverbose())
         asserting(tree)
         self.ctx = ctx
         self.tree = tree
@@ -174,7 +175,7 @@ def pp(x, indent=0):
     if isname(x):
         return 'Name(%s)' % x.value
     if isliteral(x):
-        return 'Literal(%s)' % x.value
+        return 'Literal(%s)' % x.value.replace(r'\n', '\n' + ind(indent))
     if isexpr(x):
         return 'Expression(%s)' % pp(x.expression, indent + 1)
     if isinstance(x, jmodel.MethodInvocation):
@@ -233,6 +234,60 @@ def jFieldDecl(field_decl):
         o['value'] = var.initializer
         yield o
 
+def jstr(elem):
+    if not elem:
+        return None
+    if is_str(elem):
+        return elem
+    if isname(elem):
+        return jName(elem)
+    if isstrliteral(elem):
+        asserting(hasattr(elem, 'value'))
+        asserting(is_str(elem.value))
+        return elem.value
+    if istype(elem):
+        return jType(elem)
+    asserting(False)
+    return None
+
+def invoke(self, fn, args):
+    if self:
+        return fn(self, *args)
+    else:
+        return fn(*args)
+
+
+def jwalk(elem, fnVisit=None, fnLeave=None, parents=None, idx=0):
+    if not parents:
+        parents = []
+    if fnVisit:
+        ret = fnVisit(parents + [elem])
+        if ret:
+            return ret
+    parents.append(elem)
+    childidx = 0
+    for f in elem._fields:
+        field = getattr(elem, f)
+        if field:
+            if isinstance(field, list):
+                for i in xrange(len(field)):
+                    if isinstance(field[i], jmodel.SourceElement):
+                        ret = jwalk(field[i], fnVisit, fnLeave, parents=parents, idx=childidx)
+                        childidx += 1
+                        if ret:
+                            return ret
+            elif isinstance(field, jmodel.SourceElement):
+                ret = jwalk(field, fnVisit, fnLeave, parents=parents, idx=childidx)
+                childidx += 1
+                if ret:
+                    return ret
+    asserting(parents[-1] == elem)
+    parents.pop()
+    if fnLeave:
+        ret = fnLeave(parents + [elem])
+        if ret:
+            return ret
+
 #------------------------------------------------------------------------------
 # Parsing utils.
 #------------------------------------------------------------------------------
@@ -242,17 +297,32 @@ def isliteral(x): return isinstance(x, jmodel.Literal)
 def isadditive(x): return isinstance(x, jmodel.Additive)
 def isname(x): return isinstance(x, jmodel.Name)
 def isexpr(x): return isinstance(x, jmodel.ExpressionStatement)
+def istype(x): return isinstance(x, jmodel.Type)
 
 def isstrliteral(x):
     if not isliteral(x):
         return False
     return x.value[0] == '"' and x.value[-1] == '"'
 
-def unquote(x):
-    if len(x) >= 2:
-        if x[0] == '"' and x[-1] == '"':
-            return x[1:-1]
-    return x
+def quote(x):
+    # TODO: escape inner quotes.
+    return '"' + x + '"'
+
+def unquote(x, optional=False):
+    if optional:
+        if len(x) >= 2:
+            if x[0] == '"' and x[-1] == '"':
+                return x[1:-1]
+        return x
+    else:
+        asserting(len(x) >= 2)
+        asserting(x[0] == '"' and x[-1] == '"')
+        return x[1:-1]
+
+def jmerge(lhs, rhs):
+    # if lhs and rhs are both string literals, then combine them.
+    if isstrliteral(lhs) and isstrliteral(rhs):
+        return jmodel.Literal(quote(unquote(jstr(lhs)) + unquote(jstr(rhs))))
 
 #==============================================================================
 # Preprocessor.
@@ -265,10 +335,6 @@ class Preprocess(object):
     @property
     def tree(self):
         return self.get(self._tree)
-
-    # def merge(self, lhs, rhs):
-    #     if isstrliteral(lhs) and isstrliteral(rhs):
-    #         return Literal('"' + unquote(lhs.value) + unquote(rhs.value) + '"')
 
     def get(self, elem):
         if not elem:
@@ -285,34 +351,59 @@ class Preprocess(object):
                     elif isinstance(field, jmodel.SourceElement):
                         setattr(elem, f, self.get(field))
         if isadditive(elem):
-            # if an additive's lhs and rhs are both string literals,
-            # then coalesce them.
-            if isliteral(elem.lhs) and isliteral(elem.rhs):
-                return jmodel.Literal('%s + %s' % (elem.lhs.value, elem.rhs.value))
+            merged = jmerge(elem.lhs, elem.rhs)
+            if merged:
+                return merged
         return elem
+
+#==============================================================================
+# Element Reference.
+#==============================================================================
+
+class ElemRef(object):
+    def __init__(self, ctx, unit, tree):
+        pass
+
 
 #==============================================================================
 # SQLi scanner.
 #==============================================================================
+import ssa.sql
+
+class FindSQLInUnit(jmodel.Visitor):
+    def __init__(self, unit):
+        super(FindSQLInUnit, self).__init__(verbose=VERBOSE and isverbose())
+        self.unit = unit
+        self.sql = []
+        # find SQL statements.
+        jwalk(self.unit.tree, fnVisit=self.visit, fnLeave=self.leave)
+
+    def visit(self, chain):
+        if isverbose():
+            print '%svisit %s' % (ind(len(chain)), pp(chain[-1], indent=len(chain)+1))
+
+    def leave(self, chain):
+        if isverbose():
+            print '%sleave %s' % (ind(len(chain)), type(chain[-1]))
+        if isstrliteral(chain[-1]):
+            self.scan_literal(chain[-1], indent=len(chain))
+
+    def scan_literal(self, lit, indent=0):
+        statements = ssa.sql.findall(jstr(lit))
+        if len(statements) > 0:
+            print 'Found SQL: %s' % pp(lit, indent=indent)
+
 
 class FindSQL(object):
     def __init__(self, ctx):
         self.ctx = ctx
-
-    def find_sqli(self):
+        self.units = {}
         for unit in self.ctx.each_file():
-            print 'Scanning %s for SQLi...' % unit
-            scanner = FindSQLInUnit(self.ctx, unit)
-            scanner.find_sqli()
+            self.add_unit(unit)
 
-
-class FindSQLInUnit(object):
-    def __init__(self, ctx, unit):
-        self.ctx = ctx
-        self.unit = unit
-
-    def find_sqli(self):
-        pass
+    def add_unit(self, unit):
+        print 'Scanning %s for SQL statements...' % unit
+        self.units[unit.path] = FindSQLInUnit(unit)
 
 
 #==============================================================================
