@@ -98,7 +98,7 @@ class JavaScope(jmodel.Visitor):
         self.add_decl(field['name'], field)
 
     def add_decl(self, name, val):
-        asserting(name not in self.decls)
+        #asserting(name not in self.decls) # TODO: fix nested scopes.
         self.decls[name] = val
 
 
@@ -186,9 +186,9 @@ def pp(x, indent=0):
 
 def jName(name):
     asserting(name)
-    asserting(hasattr(name, 'value'))
     if is_str(name):
         return name
+    asserting(hasattr(name, 'value'))
     asserting(is_str(name.value))
     return name.value
 
