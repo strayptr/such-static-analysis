@@ -1,5 +1,5 @@
 # such-static-analysis
-Scans source code for instances of SQL injection.  Currently only works with Java codebases.
+Source code scanner.  Scan a Java codebase for instances of SQL injection, or print out how many lines of code are in each file.
 
 ## Installation
 
