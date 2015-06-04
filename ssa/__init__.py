@@ -38,9 +38,17 @@ parser.add_argument('-c', '--count',
         action="store_true",
         help="count the lines of code in each file." )
 
-parser.add_argument('-s', '--sql',
+parser.add_argument('--sql',
         action="store_true",
-        help="print anything that looks like an SQL statement." )
+        help="print anything that looks like an SQL statement, and print !!SQLI!! when possible SQLi is detected." )
+
+parser.add_argument('--sqli',
+        action="store_true",
+        help="print only possible SQLi, not the SQL statements" )
+
+parser.add_argument('--syntax',
+        action="store_true",
+        help="print the syntax tree of each parsed Java source file" )
 
 #==============================================================================
 # Main
@@ -101,8 +109,10 @@ def get_files():
 
 def run():
     if g.args.count: g.args.mode = 'count'
-    elif g.args.sql: g.args.mode = 'sqli'
-    else: g.args.mode = 'syntax'
+    elif g.args.sql: g.args.mode = 'sql'
+    elif g.args.sqli: g.args.mode = 'sqli'
+    elif g.args.syntax: g.args.mode = 'syntax'
+    else: g.args.mode = 'sqli'
     g.args.pattern = listify(g.args.pattern)
     # if we're not counting lines, then we're scanning Java code.
     if g.args.mode != 'count':

@@ -15,7 +15,7 @@ def scan(files):
     for unit in parse_files(ctx, files, fnBeforeParsed=beforeParsed):
         if g.args.mode == 'syntax':
             print pp(unit.tree)
-        elif g.args.mode == 'sqli':
+        elif g.args.mode.startswith('sql'):
             sql_finder.search(unit)
         else:
             asserting(False and "unknown mode")
@@ -176,7 +176,10 @@ def pp(x, indent=0):
     if isliteral(x):
         val = x.value
         #val = val.replace(r'\n', '\n' + ind(indent))
-        val = val.replace(r'\n', '\\n"\n%s"' % ind(indent))
+        if val.find(r'\r\n') >= 0:
+            val = val.replace(r'\r\n', '\\r\\n"\n%s"' % ind(indent))
+        if val.find(r'\n') >= 0:
+            val = val.replace(r'\n', '\\n"\n%s"' % ind(indent))
         return 'Literal(%s)' % val
     if isexpr(x):
         return 'Expression(%s)' % pp(x.expression, indent + 1)
@@ -506,8 +509,9 @@ class FindSQLInUnit(jmodel.Visitor):
         self.prev_info = {'ref':ref, 'sql':statements}
 
     def found(self, ref):
-        #print '%sFound SQL: %s' % (ind(ref.indent), repr(ref))
-        print '%s%s' % (ind(ref.indent), repr(ref))
+        if g.args.mode == 'sql':
+            #print '%sFound SQL: %s' % (ind(ref.indent), repr(ref))
+            print '%s%s' % (ind(ref.indent), repr(ref))
 
 
 
