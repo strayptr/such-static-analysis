@@ -8,13 +8,15 @@ def scan(files):
     sql_finder = FindSQL(ctx)
     def beforeParsed(filepath, idx, total):
         progress = '(%d/%d)' % (idx, total)
-        if g.args.mode == 'syntax':
+        if g.args.mode == 'syntax' or g.args.mode == 'visit':
             print '\n%s %s' % (progress, filepath)
         else:
             print '\n%s %s' % (progress, filepath)
     for unit in parse_files(ctx, files, fnBeforeParsed=beforeParsed):
         if g.args.mode == 'syntax':
             print pp(unit.tree)
+        elif g.args.mode == 'visit':
+            unit.tree.accept(NoisyVisitor())
         elif g.args.mode.startswith('sql'):
             sql_finder.search(unit)
         else:
@@ -52,6 +54,9 @@ def _startup():
         g_parser = plyj.parser.Parser()
     return g_parser
 
+class NoisyVisitor(jmodel.Visitor):
+    def __init__(self, parent=None):
+        super(NoisyVisitor, self).__init__(verbose=True)
 
 class JavaContext(object):
     def __init__(self, files=[]):
