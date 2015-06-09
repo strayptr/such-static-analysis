@@ -50,6 +50,9 @@ parser.add_argument('--syntax',
         action="store_true",
         help="print the syntax tree of each parsed Java source file" )
 
+parser.add_argument('--mode',
+        help="set the mode directly." )
+
 #==============================================================================
 # Main
 #==============================================================================
@@ -108,11 +111,12 @@ def get_files():
     return files
 
 def run():
-    if g.args.count: g.args.mode = 'count'
-    elif g.args.sql: g.args.mode = 'sql'
-    elif g.args.sqli: g.args.mode = 'sqli'
-    elif g.args.syntax: g.args.mode = 'syntax'
-    else: g.args.mode = 'sqli'
+    if not g.args.mode:
+        if g.args.count: g.args.mode = 'count'
+        elif g.args.sql: g.args.mode = 'sql'
+        elif g.args.sqli: g.args.mode = 'sqli'
+        elif g.args.syntax: g.args.mode = 'syntax'
+        else: g.args.mode = 'sqli'
     g.args.pattern = listify(g.args.pattern)
     # if we're not counting lines, then we're scanning Java code.
     if g.args.mode != 'count':
